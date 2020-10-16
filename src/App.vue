@@ -1,16 +1,18 @@
 <template>
   <div id="app">
-    <Navigate></Navigate>
+    <a href="#" class="js-colorlib-nav-toggle colorlib-nav-toggle"><i></i></a>
+    <SideVar></SideVar>
     <router-view></router-view>
   </div>
 </template>
 
 <script>
-import Navigate from '@/components/Navigate.vue';
+import SideVar from '@/components/SideBar.vue';
+
 export default {
   name: 'App',
   components: {
-    Navigate,
+    SideVar,
   }
 }
 </script>

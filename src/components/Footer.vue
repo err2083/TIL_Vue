@@ -1,8 +1,9 @@
 <template>
   <div class="colorlib-footer">
     <h1 id="colorlib-logo" class="mb-5">
-      <router-link to="/" style="background-image: url(../assets/강슬기/강슬기2.jpg);">Andrea <span>Moore</span></router-link>
+      <router-link to="/" class="footer-background-image">레드벨벳 <span>강슬기</span></router-link>
     </h1>
+    
     <p class="pfooter">
       Copyright &copy;
       {{fullYear}}
@@ -25,8 +26,8 @@ export default {
 </script>
 
 <style>
-.test {
-  background-image: url("/assets/강슬기/강슬기2.jpg");
+.footer-background-image {
+  background-image: url("../assets/강슬기/강슬기2.jpg");
 }
 </style>
 

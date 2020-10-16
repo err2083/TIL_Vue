@@ -8,21 +8,17 @@
         <div class="row d-flex">
           <div class="col-md-6 d-flex">
             <div
-              class="img d-flex align-self-stretch align-items-center js-fullheight"
-              style="background-image: url(images/about.jpg)"
+              class="img d-flex align-self-stretch align-items-center about-background-image"
+              v-bind:style="styleObj"
             ></div>
           </div>
           <div class="col-md-6 d-flex align-items-center">
-            <div class="text px-4 pt-5 pt-md-0 px-md-4 pr-md-5 ftco-animate">
+            <div class="text px-4 pt-5 pt-md-0 px-md-4 pr-md-5">
               <h2 class="mb-4">
-                I'm <span>Andrea Moore</span> a Scotish Blogger &amp; Explorer
+                레드벨벳 <span>강슬기</span> 를 좋아하는 개발자 입니다.
               </h2>
               <p>
-                A small river named Duden flows by their place and supplies it
-                with the necessary regelialia. It is a paradisematic country, in
-                which roasted parts of sentences fly into your mouth. It is a
-                paradisematic country, in which roasted parts of sentences fly
-                into your mouth.
+                여기에는 멀 적으면 좋을까..
               </p>
             </div>
           </div>
@@ -33,8 +29,33 @@
 </template>
 
 <script>
-export default {};
+export default {
+  mounted() {
+    window.addEventListener("resize", this.handleResize);
+    // this.$nextTick(() => this.handleResize());
+    this.handleResize();
+    console.log(this.styleObj);
+  },
+  methods: {
+    handleResize() {
+      this.styleObj.height = window.innerHeight + 'px';
+    },
+  },
+  data() {
+    return {
+      styleObj: {
+        height: 0,
+      },
+    }
+  },
+  beforeDestroy() {
+    window.removeEventListener("resize", this.handleResize);
+  },
+};
 </script>
 
-<style>
+<style lang='scss'>
+.about-background-image {
+  background-image: url("../assets/강슬기/강슬기85.jpg");
+}
 </style>
