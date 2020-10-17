@@ -14,6 +14,6 @@ git add -A
 git commit -m "Deploy"
 
 echo ">> git push <<"
-git push -f https://github.com/err2083/TIL_Vue master:gh-pages
+git push -f https://github.com/err2083/TIL_Vue main:gh-pages
 
 cd ..

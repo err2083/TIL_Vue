@@ -2,7 +2,7 @@
   "name": "vue-news",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://err2083.github.io/TIL_vue/",
+  "homepage": "https://err2083.github.io/TIL_Vue/",
   "scripts": {
     "serve": "vue-cli-service serve",
     "build": "vue-cli-service build",
