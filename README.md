@@ -30,8 +30,7 @@ npm i node-sass sass-loader 명령어를 실행해서 로더를 받아주자
 
 ## 3. Footer, Navi, SideBar component
 
-footer 컴포넌트에 style=background-image 를 적용하는 부분이 있다. 뷰에서는 이유를 모르겠지만 backgroud-image 로 url 을 링크할때 먹히지 않는다.. 경로를 인식못하는건지
-다른문제가 있는건지 파악이 되지않는다.
+footer 컴포넌트에 style=background-image 를 적용하는 부분이 있다. 이는 정적으로 로딩하는 부분이므로 css 를 이용해서 그려주도록 하자
 
 navi 컴포넌트는 router-link 를 구현해주는 부분이다
 
@@ -41,5 +40,37 @@ sidevar 컴포넌트는 footer 와 navi 를 그려주는 컴포넌트이다.
 
 이제 본문을 그려보자. 일단 이미지를 window 크기에 맞추어주어야한다. v-bind:style={} 를 활용하여 높이를 동적으로 변화를 주어보자
 v-bind:style 은 동적으로 변화를 주어도 dom 이 재렌더링이 안되는것같았는데, 스타일에 단위를 명시적으로 적어주지 않으면 높이가 변하지 않았다.
-vue 에서 스타일을 건들때 꼭 단위를 적어주자. 그리고 this.$nextTick 이라는 메소드가 있는데 UI 를 변경할때 완전히 그리고 난 후에 변경할수 있게
+vue 에서 스타일을 건들때 꼭 단위를 적어주자.
+
+```javascript
+this.styleObj.height = window.innerHeight + 'px';
+```
+
+그리고 this.$nextTick 이라는 메소드가 있는데 UI 를 변경할때 완전히 그리고 난 후에 변경할수 있게
 콜백을 달아주는 메소드가 있으니 필요할때 사용해보도록 하자.
+
+## 5. Post component
+
+강슬기 사진을 랜덤으로 표시를 해보자. v-bind:style={backgroundImage: url(${path})} 의 템플릿으로 넣어주어야한다.
+이때 path 는 require 로 받은 url 이여야 한다.
+코드를 보면
+
+```javascript
+<template>
+    <div v-bind:style="{ backgroundImage: 'url(' + imgUrl + ')' }"></div>
+</template>
+this.imgUrl = require(`@/assets/강슬기/강슬기${random}.${extend}`);
+```
+
+[a link](https://stackoverflow.com/questions/35242272/vue-js-data-bind-style-backgroundimage-not-working/35244182)
+
+처럼 경로를 구성해주면 된다.
+
+## PostListView
+
+여기서 가장 먼저 해야할것은 디렉토리를 읽은 다음 해당 정보를 리스트로 뿌려주어야 한다.
+require.context 를 이용해서 md 파일 리스트를 가져오고 이를 Post component 을 아용해서 그려보자
+
+## github-css 적용
+
+[a link](https://github.com/sindresorhus/github-markdown-css)

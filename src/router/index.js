@@ -2,6 +2,7 @@ import Vue from 'vue';
 import VueRouter from 'vue-router';
 import AboutView from '@/views/AboutView.vue';
 import PostListView from '@/views/PostListView.vue';
+import PostDetailView from '@/views/PostDetailView.vue'
 
 Vue.use(VueRouter);
 
@@ -10,11 +11,15 @@ const router = new VueRouter({
     routes: [
         {
             path: '/',
-            component: AboutView,
+            component: AboutView
         },
         {
-            path: '/list',
+            path: '/posts',
             component: PostListView
+        },
+        {
+            path: '/post/:path',
+            component: PostDetailView
         }
     ]
 });

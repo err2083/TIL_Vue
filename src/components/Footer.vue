@@ -30,6 +30,3 @@ export default {
   background-image: url("../assets/강슬기/강슬기2.jpg");
 }
 </style>
-
-
-// <img :src="require(`@/assets/강슬기/강슬기3.jpg`)" />

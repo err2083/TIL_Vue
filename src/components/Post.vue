@@ -1,30 +1,27 @@
 <template>
-  <div class="col-md-12">
+  <router-link v-bind:to="`/post/${fileName}`">
     <div class="blog-entry d-md-flex">
       <a
-        href="single.html"
+        href="#"
         class="img img-2"
-        style="background-image: url(images/image_1.jpg)"
+        :style="{ backgroundImage: 'url(' + imgUrl + ')' }"
       ></a>
       <div class="text text-2 pl-md-4">
         <h3 class="mb-2">
-          <a href="single.html">A Loving Heart is the Truest Wisdom</a>
+          {{ title }}
         </h3>
         <div class="meta-wrap">
           <p class="meta">
-            <span><i class="icon-calendar mr-2"></i>June 28, 2019</span>
+            <span><i class="icon-calendar mr-2"></i>...</span>
             <span
-              ><a href="single.html"
-                ><i class="icon-folder-o mr-2"></i>Travel</a
+              ><a href="#"
+                ><i class="icon-folder-o mr-2"></i>{{ category }}</a
               ></span
             >
-            <span><i class="icon-comment2 mr-2"></i>5 Comment</span>
+            <span><i class="icon-comment2 mr-2"></i>...</span>
           </p>
         </div>
-        <p class="mb-4">
-          A small river named Duden flows by their place and supplies it with
-          the necessary regelialia.
-        </p>
+        <p class="mb-4">...</p>
         <p>
           <a href="#" class="btn-custom"
             >Read More <span class="ion-ios-arrow-forward"></span
@@ -32,11 +29,51 @@
         </p>
       </div>
     </div>
-  </div>
+  </router-link>
 </template>
 
 <script>
-export default {};
+export default {
+  name: "Post",
+  props: ["mdFile"],
+  data() {
+    return {
+      imgUrl: "",
+      category: "",
+      title: "",
+    };
+  },
+  mounted() {
+    this.setImageUrl();
+    this.setFileInfo();
+  },
+  methods: {
+    getRandom(max, min) {
+      return Math.floor(Math.random() * (max - min)) + min;
+    },
+    getFileExtend(number) {
+      if (number >= 64 && number <= 67) {
+        return "png";
+      }
+      return "jpg";
+    },
+    setImageUrl() {
+      const random = this.getRandom(3, 88);
+      const extend = this.getFileExtend(random);
+      this.imgUrl = require(`@/assets/강슬기/강슬기${random}.${extend}`);
+    },
+    setFileInfo() {
+      const strSplit = this.mdFile.split("/");
+      this.category = strSplit[1];
+      this.title = strSplit[2].split(".")[0];
+    },
+  },
+  computed: {
+    fileName() {
+      return this.category + "-" + this.title;
+    },
+  },
+};
 </script>
 
 <style>

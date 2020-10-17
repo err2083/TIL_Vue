@@ -32,9 +32,7 @@
 export default {
   mounted() {
     window.addEventListener("resize", this.handleResize);
-    // this.$nextTick(() => this.handleResize());
     this.handleResize();
-    console.log(this.styleObj);
   },
   methods: {
     handleResize() {
