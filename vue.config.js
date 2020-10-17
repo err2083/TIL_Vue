@@ -6,5 +6,6 @@ module.exports = {
             .use('file-loader')
             .loader('file-loader')
             .end()
-    }
+    },
+    publicPath: '/TIL_Vue'
 }
