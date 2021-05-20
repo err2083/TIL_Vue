@@ -139,3 +139,41 @@ public class JdbcBookShop implements BookShop {
 그런데 이렇게 JDBC 접속을 분명하게 커밋/롤백해서 트랜잭션을 관리하는 방법은 메서드마다 판박이 코드가 지겹게 반복되는 모양새라 바람직하지 않고, JDBC에 종속되므로 나중에 데이터 액세스 기술을 변경하면 전체 코드를 변경해야하는 문제가 있습니다. 다행이 스프링은 간편하게 트랜잭션 관리 작업을 할 수 있도록 PlatformTransactionManager, TransactionTemplate, 트랜잭션 선언 등 지원합니다.
 
 ## 10.2 트랜잭션 관리자 구현체 선정하기
+
+### 과제
+
+데이터 소스가 하나뿐인 애플리케이션은 하나의 DB접속에 대해 commit(), rollback() 메소드를 호출하면 트랜잭션을 관리할수 있지만, 트랜잭션을 관리할 데이터 소스가 여럿이거나 자바 EE 애플리케이션 서버에 내장된 트랜잭션 관리 기능을 사용할 경우 Java Transaction API 사용을 고려해야합니다. JPA 같은 ORM 프레임워크마다 상이한 트랜잭션 API를 호출하는 경우도 있습니다. 이렇게 기술이 달라지만 트랜잭션 API도 달리 해야 하지만 다른 API로 전환하는 일이 녹록치 않다.
+
+### 해결책
+
+스프링은 여러 트랜잭션 관리 API 중에서 범용적인 트랜잭션 기능을 추상화했습니다. 덕분에 개발자는 하부 트랜잭션 API를 자세히 몰라도 스프링이 제공하는 트랜잭션 편의 기능을 이용할 수 있고, 특정 트랜잭션 기술에 구애받지 않아도 됩니다.
+
+PlatformTransactionManager는 기술 독립적인 트랜잭션 관리 메서드를 캡슐화한 스랜잭션 관리 추상화의 핵심 인터페이스 입니다. 이 트랜잭션은 다음 세 작업 메서드를 제동해줍니다.
+
+* TransactionStatus getTransaction(TransactionDefinition definition) throws TransactionException
+* void commit(TransactionStatus status) throws TransactionException
+* void rollback(TransactionStatus status) throws TransactionException
+
+### 풀이
+
+PlatformTransactionManager는 전체 스프링 트랜잭션 관리자를 포괄한 인터페이스오, 스프링에는 여러 가지 트랜잭션 관리 API에 적용 가능한, 이 인터페이스의 기본 구현체가 이미 탑재되어 있습니다.
+
+하나의 데이터 소스를 JDBC로 액세스하는 애플리케이션은 DataSourceTransactionManager 정도면 충분합니다.
+
+* 자바 EE 애플리케이션 서버에서 JTA로 트랜잭션을 관리할 경우, 서버에서 트랜잭션을 탐색하려면 JtaTransactionManager를 사용해야 합니다. 분산 트랜잭션(여러 리소스에 걸친 트랜잭션)을 구현할 때에도 JtaTransactionManager가 제격입니다. 대부분 JTA 트랜잭션 관리자를 이용해 애플리케이션 서버의 트랜잭션 관리자를 연계하지만 Atomikos 같은 단독형 JTA 트랜잭션 관리자도 얼마든지 이용 가능합니다.
+* ORM 프레임워크로 DB에 액세스할 경우 HibernateTransactionManager나 JpaTransactionManager 등의 해당 프레임워크 트랜잭션 관리자를 선택합니다.
+
+![10.2](../../img/Spring/Transaction/10-2.png) 그림 10-2 자주 쓰이는 PlatformTransactionManager 인터페이스 구현체
+
+트랜잭션 관리자는 IoC 컨테이너에 일반 빈으로 선언합니다. 다음은 DataSourceTransactionManager 인스턴스를 빈으로 선언합니다. 다음은 DataSourceTransactionManager 인스턴스를 빈으로 구성한 코드입니다. 반드시 트랜잭션 관리에 필요한 dataSource 프로퍼티를 설정해야 이 데이터 소스로 접속된 트랜잭션을 관리할 수 있습니다.
+
+```java
+@Bean
+public DataSourceTransactionManager transactionManager() {
+    DataSourceTransactionManager transactionManager = new DataSourceTransactionManager();
+    transactionManager.setDataSource(dataSource());
+    return transactionManager;
+}
+```
+
+## 10.3 트랜잭션 관리자 API를 이용해 프로그램 방식으로 트랜잭션 관리하기
