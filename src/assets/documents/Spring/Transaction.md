@@ -140,11 +140,11 @@ public class JdbcBookShop implements BookShop {
 
 ## 10.2 트랜잭션 관리자 구현체 선정하기
 
-### 과제
+> 과제
 
 데이터 소스가 하나뿐인 애플리케이션은 하나의 DB접속에 대해 commit(), rollback() 메소드를 호출하면 트랜잭션을 관리할수 있지만, 트랜잭션을 관리할 데이터 소스가 여럿이거나 자바 EE 애플리케이션 서버에 내장된 트랜잭션 관리 기능을 사용할 경우 Java Transaction API 사용을 고려해야합니다. JPA 같은 ORM 프레임워크마다 상이한 트랜잭션 API를 호출하는 경우도 있습니다. 이렇게 기술이 달라지만 트랜잭션 API도 달리 해야 하지만 다른 API로 전환하는 일이 녹록치 않다.
 
-### 해결책
+> 해결책
 
 스프링은 여러 트랜잭션 관리 API 중에서 범용적인 트랜잭션 기능을 추상화했습니다. 덕분에 개발자는 하부 트랜잭션 API를 자세히 몰라도 스프링이 제공하는 트랜잭션 편의 기능을 이용할 수 있고, 특정 트랜잭션 기술에 구애받지 않아도 됩니다.
 
@@ -154,7 +154,7 @@ PlatformTransactionManager는 기술 독립적인 트랜잭션 관리 메서드�
 * void commit(TransactionStatus status) throws TransactionException
 * void rollback(TransactionStatus status) throws TransactionException
 
-### 풀이
+> 풀이
 
 PlatformTransactionManager는 전체 스프링 트랜잭션 관리자를 포괄한 인터페이스오, 스프링에는 여러 가지 트랜잭션 관리 API에 적용 가능한, 이 인터페이스의 기본 구현체가 이미 탑재되어 있습니다.
 
@@ -177,3 +177,163 @@ public DataSourceTransactionManager transactionManager() {
 ```
 
 ## 10.3 트랜잭션 관리자 API를 이용해 프로그램 방식으로 트랜잭션 관리하기
+
+> 과제
+
+비즈니스 메서드에서 트랜잭션을 커밋/롤백하는 시점은 정교하게 제어해야 하나 하부 트랜잭션 API를 직접 다루고 싶지는 않습니다.
+
+> 해결책
+
+스프링 트랜잭션 관리자는 getTransaction() 메서드로 새 트랜잭션을 시작하고 commit(), rollback() 메서드로 트랜잭션을 관리하는, 기술 독립적인 API를 제공합니다. PlatformTransactionManager는 트랜잭션 관리를 추상화한 인터페이스라서 어떤 기술로 구현하든 잘 동작합니다.
+
+> 해결책
+
+```java
+public class TransactionalJdbcBookShop extends JdbcDaoSupport implements BookShop {
+    private PlatformTransactionManager transactionManager;
+
+    public void setTransactionManager(PlatformTransactionManager transactionManager) {
+        this.transactionManager = transactionManager;
+    }
+
+    @Override
+    public void purchase(String isbn, String username) {
+        TransactionDefinition def = new DefaultTransactionDefinition();
+        TransactionStatus = transactionManager.getTransaction(def);
+
+        try {
+            int price = getJdbcTemplate().queryForObject("SELECT PRICE FROM BOOK WHERE ISBN = ?", Integer.class, isbn);
+
+            getJdbcTemplate().update("UPDATE BOOK_STOCK SET STOCK = STOCK -1 WHERE ISBN = ?", isbn);
+
+            getJdbcTemplate().update("UPDATE ACCOUNT SET BALANCE = BALANCE - ? WHERE USERNAME = ?", price, username);
+
+            transactionManager.commit(status);
+        } catch (DataAccessException e) {
+            transactionManager.rollback(status);
+            throw e;
+        }
+    }
+}
+```
+
+새 트랜잭션을 시작하기 전에 TransactionDefinition형 트랜잭션 정의 객체에 속성을 설정합니다. 트랜잭션 정의 객체를 getTransaction() 메서드의 인수로 넣고 호출하여 트랜잭션 관리자에게 새 트랜잭션을 시작할 것을 요구합니다. 그러면 트랜잭션 관리자는 트랜잭션 상태 추적용 TransactionStatus 객체를 반환하고 SQL문이 모두 정상 실행되면 이 트랜잭션 상태를 넘겨 트랜잭션을 커밋하라고 트랜잭션 관리자에게 알립니다. 또 스프링 JDBC 템플릿에서 발생한 예외는 모두 DataAccessException 하위형 이므로 이런 종류의 예외가 나면 롤백하도록 설정합니다.
+
+이 클래스의 트랜잭션 관리자 프로퍼티(transactionManager)는 일반형 PlatformTransactionManager로 선언했기 때문에 적절한 트랜잭션 관리자 구현체가 필요합니다. 이 예제는 하나의 데이터 소스로 JDBC를 사용해 액세스하는 경우이므로 DataSourceTransactionManager 가 적당합니다. 이 클래스는 JdbcDaoSupport의 하위 클래스라서 Source 객체도 연결해야 합니다.
+
+```java
+@Configuration
+public class BookstoreConfiguration {
+    @Bean
+    public DataSourceTransactionManager transactionManager() {
+        DataSourceTransactionManager transactionManager = new DataSourceTransactionManager();
+        transactionManager.setDataSource(dataSource());
+        return transactionManager;
+    }
+
+    @Bean
+    public BookShop bookShop() {
+        TransactionalJdbcBookShop bookShop = new TransactionalJdbcBookShop();
+        bookShop.setDataSource(dataSource());
+        bookShop.setTransactionManager(transactionManager());
+        return bookShop;
+    }
+}
+```
+
+## 10.4 트랜잭션 템플릿을 이용해 프로그램 방식으로 트랜잭션 관리하기
+
+> 과제
+
+전체가 아닌 하나의 코드 블록에서 다음과 같은 트랜잭션 요건을 적용해야 하는 비즈니스 메서드가 있다고 합시다.
+
+* 블록 시작 지점에서 트랜잭션을 새로 시작합니다.
+* 정상 실행되면 트랜잭션을 커밋합니다.
+* 예외가 발생하면 트랜잭션을 롤백합니다.
+
+스프링 트랜잭션 관리자 API를 직접호출하면 트랜잭션 관리 코드는 구현 기술과 독립적으로 일반화할수 없습니다. 또 비슷한 코드 블록마다 판박이 코드를 반복하고 싶은 개발자도 없습니다.
+
+> 해결책
+
+스프링은 JDBC 템플릿과 유사한 트랜잭션 템플릿을 제공함으로써 전체 트랜잭션 관리 프로세스 및 예외 처리를 효과적으로 제어할 수 있게 지원합니다. TransactionCallback|&lt;T&gt; 인터페이스를 구현한 콜백 클래스에서 코드 블록을 캡슐화한 뒤 TransactionTemplate의 execute() 메서드에 전달하면 됩니다. 더 이상 트랜잭션을 관리하는 반복적인 코드는 없어도 됩니다. 스프링에 내장된 템플릿은 가벼운 객체여서 성능에 영향을 미치지 않으며 간단히 재생성/폐기할 수 있습니다. JDBC 템플릿을 간단히 DataSource를 참조해서 재생성할 수 있는 것처럼, TransactionTemplate도 트랜잭션 관리자를 참조할 수 있으면 얼마든지 다시 만들 수 있습니다. 물론, 스프링 애플리케이션 컨텍스트에 생성해도 됩니다.
+
+> 풀이
+
+데이터 소스가 있어야 JDBC 템플릿을 생성할 수 있듯 TransactionTemplate도 트랜잭션 관리자가 있어야 만들 수 있습니다. 트랜잭션 템플릿은 트랜잭션이 적용될 코드 블록을 캡슐화한 트랜잭션 콜백 객체를 실행합니다. 콜백 인터페치스는 별도 클래스 또는 내부 클래스 형태로 구현하는데. 내부 클래스로 구현할 경우에는 메서드 인수 앞에 final을 선언해야 합니다.
+
+```java
+public class TransactionalJdbcBookShop extends JdbcDaoSupport implements BookShop {
+    @Setter
+    private PlatformTransactionManager transactionManager;
+
+    @Override
+    public void purchase(final String isbn, final String username) {
+        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+
+        transactionTemplate.execute(new TransactionCallbackWithoutResult() {
+            protected void doInTransactionWithoutResult(TransactionStatus status) {
+                int price = getJdbcTemplate().queryForObject("SELECT PRICE FROM BOOK WHERE ISBN = ?", Integer.class, isbn);
+
+                getJdbcTemplate().update("UPDATE BOOK_STOCK SET STOCK = STOCK -1 WHERE ISBN = ?", isbn);
+
+                getJdbcTemplate().update("UPDATE ACCOUNT SET BALANCE = BALANCE - ? WHERE USERNAME = ?", price, username);
+            }
+        });
+    }
+}
+```
+
+TransactionTemplate은 TransactionCallback&lt;T&gt; 인터페이스를 구현한 트랜잭션 콜백 객체, 또는 이 인터페이스를 구현한 프레임워크 내장 객체 TransactionCallbackWithoutResult를 받습니다. 도서 재고 및 계정 잔고를 차감하는 purchase() 메서드는 반환값이 없으므로 TransactionCallbackWithoutResult 정도로 충분합니다. 어떤 값을 반환하는 코드 블록은 반드시 TransactionCallback&lt;T&gt; 인터페이스를 구현해야  하며 콜백 객체의 반환값은 템플릿에 있는 T execute() 메서드가 반환합니다. 트랜잭션을 직접 시작, 커밋/롤백해야 하는 부담에서 벗아난 것이 가장 큰 보람입니다.
+
+콜백 객체를 실행하다가 언체크 예외(RuntimeException, DataAccessException)가 발생하거나 명시적으로 doInTransactionWithoutResult() 메서드의 TransactionStatus 인수에 대해 setRollbackOnly() 메서드를 호출하면 트랜잭션이 롤백됩니다. 그밖에는 콜백 객체 실행이 끝나자마자 트랜잭션이 커밋됩니다.
+
+트랜잭션 템플릿을 직접 생성하지 말고 IoC 컨테이너가 대신 만들게 구성해도 됩니다.
+
+```java
+public class TransactionalJdbcBookShop extends JdbcDaoSupport implements BookShop {
+    @Setter
+    private TransactionTemplate transactionTemplate;
+}
+```
+
+트랜잭션 템플릿은 스레드-안전한 객체여서 트랜잭션이 적용된 여러 빈에 두루 사용됩니다.
+
+## 10.5 @Transactional을 붙여 선언적으로 트랜잭션 관리하기
+
+> 과제
+
+빈 구성 파일에 트랜잭션을 선언하려면 포인트컷, 어드바이스, 어드바이저 같은 AOP 지식이 필수입니다.
+
+> 해결책
+
+스프링에서는 각각 트랜잭션을 적용할 메서드에 @Transactional, 구성 클래스에는 @EnableTransactionManagement을 붙여 트랜잭션을 선언합니다.
+
+> 풀이
+
+메서드에 @Transactional만 붙이면 트랜잭션이 걸린 메서드로 선언됩니다. 주의할 점은 스프링 AOP가 프록시 기반으로 움직이는 한계 때문에 public 메서드에만 이런 방법이 통한다는 사실입니다.
+
+_프록시를 사용해 @Transactional 메서드를 가져와 실행해야 하는데 private, protected 등 public 이외의 접근자를 붙이면 가져올 수가 없기 때문에 에러는 나지 않지만 조용히 무시됩니다._
+
+```java
+public class JdbcBookShop extends JdbcDaoSupport implements BookShop {
+
+    @Transactional
+    public void purchase(final String isbn, final String username) {
+        int price = getJdbcTemplate().queryForObject("SELECT PRICE FROM BOOK WHERE ISBN = ?", Integer.class, isbn);
+
+        getJdbcTemplate().update("UPDATE BOOK_STOCK SET STOCK = STOCK -1 WHERE ISBN = ?", isbn);
+
+        getJdbcTemplate().update("UPDATE ACCOUNT SET BALANCE = BALANCE - ? WHERE USERNAME = ?", price, username);
+    }
+}
+```
+
+@Transactional은 메서드/클래스 레벨에 적용 가능한 애너테이션입니다. 클래스에 적용하려면 그 클래스의 모든 public 메서드에 트랜잭션이 걸립니다. 인터페이스도 클래스/메서드 레벨에 @Transactional을 붙일 순 있지만 클래스 기반 프록시(CGLIB 프록시)에서는 제대로 작동하지 않을 수 있으니 권장하지 않습니다.
+
+자바 구성 클래스에는 @EnableTransactionManagement 하나만 붙이면 됩니다. 스프링은 IoC 컨테이너에 선언된 빈들을 찾아 @Transactional을 붙인 메서드 중에서 public 메서드를 가져와 어드바이스를 적용합니다. 이런 과정을 거쳐 스프링에서 트랜잭션을 관리할 수 있습니다.
+
+```java
+@Configuration
+@EnableTransactionManagement
+public class BookstoreConfiguration {}
+```
