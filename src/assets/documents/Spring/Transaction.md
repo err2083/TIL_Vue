@@ -337,3 +337,110 @@ public class JdbcBookShop extends JdbcDaoSupport implements BookShop {
 @EnableTransactionManagement
 public class BookstoreConfiguration {}
 ```
+
+## 10.6 트랜잭션 전당 속성 설정하기
+
+> 과제
+
+트랜잭션이 걸린 메서드를 다른 메서드가 호출할 경우엔 트랜잭션을 어떠헤 전달할지 지정할 필요가 있습니다. 이를테면 호출한 메서드 역시 기존 트랜잭션 내에서 실행하거나, 트랜잭션을 하나 더 생성해 자신만의 고유한 트랜잭션에서 실행하거나 해야겠죠.
+
+> 해결책
+
+트랜잭션 전달 방식은 propagation 트랜잭션 속서에 명시합니다. org.springframework.transaction.TransactionDefinition 인터ㅔ이스에는 모두 일곱 가지 전달 방식이 정의되어 있습니다. 모든 트랜잭션 관리자가 모두 지원하는 건 아니고, 하부 이소스에 따라 달라질 수도 있습니다. 가령 트랜잭션 관리자가 다양한 전달 방식을 지원한다 해도 DB가 지원하는 겨리 수준에 따라 영향을 받을 수밖에 없습니다.
+
+|전달 속성|설명|
+|------|-------------------|
+|REQUIRED|진행 중인 트랜잭션이 있으면 현재 메서드를 그 트랜잭션에서 실행화되, 없으면 새 트랜잭션을 시작해서 실행합니다.
+|REQUIRES_NEW|항상 새 트랜잭션을 시작해 현재 메서드를 실행하고 진행 중인 트랜잭션이 있으면 잠시 중단시킵니다.|
+|SUPPORTS|진행 중인 트랜잭션이 있으면 현재 메서드를 그 트랜잭션 내에서 실행하되, 그렇지 않을 경우 트랜잭션 없이 실행합니다.|
+|NOT_SUPPORTED|트랜잭션 없이 현재 메서드를 실행하고 진행 중인 트랜잭션이 있으면 잠시 중단시킵니다.|
+|NEVER|반드시 트랜잭션 없이 현재 메서드를 실행하되 진행 중인 트랜잭션이 있으면 예외를 던집니다.|
+|NESTED|진행 중인 트랜잭션이 있으면 현재 메서드를 이 트랜잭션의 중첩 트랜잭션 내에서 실행합니다. 진행 중인 트랜잭션이 없으면 새 트랜잭션응 시작해서 실행합니다. 이 방식은 스프링에서만 가능한데. 장시간 싱행되는 업무를 처리하면서 배치 실행 도중 끊어서 커밋하는 경우 유용합니다. 이를테면 일정 갯수 레코드당 한번씩 커밋하는 경우, 중간에 일이 잘못되어도 중첩 트랜잭션을 롤백하면 전체가 아닌 일정 갯수 레코드만 롤백됩니다.|
+
+> 풀이
+
+트랜잭션이 걸린 메서드를 다른 메서드가 호출하면 트랜잭션 전달이 일어납니다.
+예를 들어, 서점 고객이 계산대에서 체크아웃하는 상황을 가정하면, 먼저 Cashier(계산대) 인터페이스를 다음과 같이 정의합니다. 이 인터페이스는 구매 작업을 bookshop 빈에 넘겨 purchase() 메서드를 여러 번 호출하는 식으로 구현할 수 있습니다. 당연히 checkout() 메서드엔 @Transactional을 붙여 트랜잭션을 걸어야 합니다.
+
+```java
+public interface Cashier {
+    public void checkout(List<String> isbns, String username);
+}
+
+public class BookShopCashier implements Cashier {
+    @Setter
+    private BookShop bookShop;
+
+    @Override
+    @Transactional
+    public void checkout(List<String> isbns, String username) {
+        for (String isbn : isbns) {
+            bookShop.purchase(isbn, username);
+        }
+    }
+}
+```
+
+서점 DB에 테스트 데이터를 입력해서 트랜잭션 전달 과정을 살펴봅시다
+
+|ISBN|BOOK_NAME|PRICE|
+|---|---|---|
+|0001|The First Book|30|
+|0002|The Second Book|50|
+
+|ISBN|STOCK|
+|---|---|
+|0001|10|
+|0002|10|
+
+|USERNAME|BALANCE|
+|---|---|
+|user1|40|
+
+### REQUIRED 전달 속성
+
+user1 유저가 도서 2권을 계산대에서 체크아웃할 때 이 유저의 잔고 사정상 첫 번째 도서는 구매할 수 있지만 두 번째 도서는 구매하기 부족하다고 합시다.
+
+```java
+public class Main {
+    public static void main(String[] args) {
+        Cashier cashier = context.getBean(Cashier.class);
+        List<String> isbnList = Arrays.asList(new String[] {"0001","0002"});
+        cashier.checkout(isbnList, "user1");
+    }
+}
+```
+
+bookshop 빈의 purchase() 메서드를 checkout() 처럼 다른 트랜잭션이 걸려 있는 메서드가 호출하면 기존 트랜잭션에서 실행하는 것이 기본인데, 이것이 기본 전달 방식인 REQUIRED의 로직입니다. 즉 checkout() 메서드의 시작, 종료 지점을 경계로 그 안에선 오직  하나의 트랜잭션만 존재하다가 메서드가 끝나면 커밋됩니다. 결국 user1 유저는 도서를 한 권도 구입하지 못합니다.
+
+![10.3](../../img/Spring/Transaction/10-3.png) 그림 10-3 REQUIRED 트랜잭션 전달 속성
+
+purchase() 메서드를 호출한 메서드가 @Transactional 메서드가 아니라서 적용된 트랜잭션이 없다면 새 트랜잭션을 만들어 시작하고 그 트랜잭션으로 메서드를 실행합니다. 트랜잭션 전달 방식은 @Transactional의 propagation 속성에 지정합니다. REQUIRED는 기본 전달 방식이라서 굳이 명시하지 않아도 됩니다.
+
+```java
+public class JdbcBookShop extends JdbcDaoSupport implements BookShop {
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void purchase(String isbn, String username) {
+        // ...
+    }
+}
+```
+
+### REQUIRES_NEW 전달 속성
+
+무조건 트랜잭션을 새로 시작해 그 트랜잭션 안에서 메서드를 실행시키는 REQUIRES_NEW도 자주 쓰이는 전달 방식입니다. 진행 중인 트랜잭션이 있으면 잠깐 중단시킵니다. 따라서 BookShopCashier의 checkout() 메서드는 REQUIRED 방식으로 전달합니다.
+
+```java
+public class JdbcBookShop extends JdbcDaoSupport implements BookShop {
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void purchase(String isbn, String username) {
+        // ...
+    }
+}
+```
+
+여기서는 모두 세 차례 트랜잭션이 시작됩니다. 첫 번째 트랜잭션은 checkout() 메서드에서 시작하지만 이 메서드가 첫 번째 purchase() 메서드를 호출하면 첫 번째 트랜잭션은 잠시 중단되고 새 트랜잭션이 시작됩니다. 새 트랜잭션은 첫 번째 purchase() 메서드가 끝나면 커밋됩니다. 두 번째 purchase() 메서드가 호출되면 또 다른 새 트랜잭션이 시작되지만 이 트랜잭션은 결국 실패하면서 롤백됩니다. 결국 첫 번째 도서는 구매 처리되지만 두 번째 도서는 도중에 실패합니다.
+
+![10.4](../../img/Spring/Transaction/10-4.png) 그림 10-4 REQUIRES_NEW 전달 방식의 처리 로직
+
+## 10.7 트랜잭션 격리 속성 설정하기
