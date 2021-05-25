@@ -444,3 +444,249 @@ public class JdbcBookShop extends JdbcDaoSupport implements BookShop {
 ![10.4](../../img/Spring/Transaction/10-4.png) 그림 10-4 REQUIRES_NEW 전달 방식의 처리 로직
 
 ## 10.7 트랜잭션 격리 속성 설정하기
+
+> 과제
+
+동일한 애플리케이션 또는 상이한 애플리케이션에서 여러 트랜잭션이 동시에 같은 데이터를 대상으로 작업을 수행하면 어떤 일이 일어날지 예측하기 어렵습니다. 이럴 때엔 여러 트랜잭션이 다른 트랜잭션과 어떻게 격리되어야 하는지 분명히 지정해야 합니다.
+
+> 해결책
+
+두 트랜잭션 T1, T2가 있을 때 동시성 트랜잭션으로 발생할 수 있는 문제는 네 가지로 분류됩니다.
+
+* 오염된 값 읽기(Dirty read): T2가 수정 후 커밋하지 않은 필드를 T1이 읽는 상황에서 나중에 T2가 롤백되면 T1이 읽은 필드는 일시적인 값으로 더 이상 유효하지 않습니다.
+* 재현 불가한 읽기(Nonrepeatable read): 어떤 필드를 T1이 읽은 후 T2가 수정할 경우, T1이 같은 필드를 다시 읽으면 다른 값을 얻습니다.
+* 허상 읽기(Phantom read): T1이 테이블의 로우 몆 개를 읽은 후 T2가 같은 테이블에 새 로우를 삽입할 경우, 나중에 T1이 같은 테이블을 다시 읽으면 T2가 삽입한 로우가 보입니다.
+* 소실된 수정(Lost updates): T1, T2 모두 어떤 로우를 수정하려고 읽고 그 로우의 상태에 따라 수정하려는 경우 입니다. T1이 먼저 로우를 수정 후 커밋하기 전, T2가 T1이 수정한 로우를 똑같이 수정했다면 T1이 커밋한 후에 T2 역시 커밋을 하게 될 텐데, 그러면 T1이 수정한 로우를 T2가 덮어쓰게 되어 T1이 수정한 내용이 소실됩니다.
+
+이론적으로 이런 저수준의 문제를 예방하려면 트랜잭션을 서로 완전히 격리하면 되겠지만, 이는 한 줄로 세워놓고 하나씩 실항하는 꼴이라서 엄청난 성능저하가 일어납니다. 실무에서는 성능을 감안해서 트랜잭션 격리 수준을 낮추는게 일반적입니다.
+
+트랜잭션 격리 수준은 isolation 속성으로 지정하며 스프링 org.springframework.transaction.TransactionDefinition 인터페이스에 5가지 격리 수준이 정의 되어 있습니다.
+
+|격리 수준|설명|
+|---|---|
+|DEFAULT|DB 기본 격리 수준을 사용합니다, DB는 READ_COMMITTED이 기본 격리 수준입니다.|
+|READ_UNCOMMITTED|다른 트랜잭션이 아직 커밋하지 않은(UNCOMMITTED) 값을 한 트랜잭션이 읽을 수 있습니다. 따라서 Dirty read, Nonrepeatable read, Phantom read 문제가 발생할 가능성이 있습니다.|
+|READ_COMMITTED|한 트랜잭션이 다른 트랜잭션이 커밋한(COMMITTED) 값만 읽을 수 있습니다. 이로써 Dirty read 는 해결되지만, Nonrepeatable read, Phantom read 문제는 여전히 남습니다. |
+|REPEATABLE_READ|트랜잭션이 어떤 필드를 여러 번 읽어도 동일한 값을 읽도록 보장합니다. 트랜잭션이 지속되는 동안에는 다른 트랜잭션이 해당 필드를 변경할 수 없습니다. 그러나 여전히 Phantom read 문제가 있습니다.|
+|SERIALIZABLE|트랜잭션이 테이블을 여러 번 읽어도 정확히 동일한 로우를 읽도록 보장합니다. 트랜잭션이 지속되는 동안에는 다른 트랜잭션이 해당 테이블에 삽입, 수정, 삭제를 할 수 없습니다. 동시성 문제는 모두 해소되지만 성능은 현저히 떨어집니다.|
+
+_트랜잭션 격리는 하부 DB엔진이 지원하능 기능으로, 애플리케이션이나 프레임워크가 하는 일이 아닙니다. 또한 모든 DB 엔진이 트랜잭션 격리 수준을 다 지원하는 것도 아닙니다. JDBC 접속의 격리 수준을 변경하려면 java.sql.Connection 인터페이스의 setTransactionIsolation() 메서드를 호출합니다._
+
+> 풀이
+
+서점 애플리케이션에 도서 재고를 늘리고 체크하는 기능을 추가하면서 동시성 트랜잭션 문제를 살펴보겠습니다.
+
+```java
+public interface BookShop {
+    public void increaseStock(String isbn, int stock);
+    public int checkStock(String isbn);
+}
+
+public class JdbcBookShop extends JdbcDaoSupport implements BookShop {
+    @Override
+    @Transactional
+    public void purchase(String isbn, String username) {
+        int price = getJdbcTemplate().queryForObject("SELECT PRICE FROM BOOK WHERE ISBN = ?", Integer.class, isbn);
+
+        getJdbcTemplate().update("UPDATE BOOK_STOCK SET STOCK = STOCK -1 WHERE ISBN = ?", isbn);
+
+        getJdbcTemplate().update("UPDATE ACCOUNT SET BALANCE = BALANCE - ? WHERE USERNAME = ?", price, username);
+    }
+
+    @Override
+    @Transactional
+    public void increaseStock(String isbn, int stock) {
+        String threadName = Thread.currentThread().getName();
+        System.out.println(threadName + " - Prepare to increase book stock");
+
+        getJdbcTemplate().update("UPDATE BOOK_STOCK SET STOCK + ? " + "WHERE ISBN = ?", stock. isbn);
+
+        System.out.println(threadName + " - Book stock increase by " + stock);
+        sleep(threadName);
+
+        System.out.println(threadName + " - Book stock rolled back" + stock);
+        throw new RuntimeException("Increased by mistake");
+    }
+
+    @Override
+    @Transactional(isolation = Isolation.READ_UNCOMMITTED)
+    public int checkStock(String isbn) {
+        String threadName = Thread.currentThread().getName();
+        System.out.println(threadName + " - Prepare to check book stock");
+
+        int stock = getJdbcTemplate().queryForObject("SELECT STOCK FROM BOOK_STOCK " + "WHERE ISBN = ?", Integer.class, isbn);
+
+        System.out.println(threadName + " - Book stock is " + stock);
+        sleep(threadName);
+
+        return stock;
+    }
+
+    private void sleep(String threadName) {
+        System.out.println(threadName + " - Sleeping");
+
+        try {
+            Thread.sleep(10000);
+        } catch (InterruptedException e) {}
+
+        System.out.println(threadName + " - Wake up");
+    }
+}
+```
+
+동시성을 시뮬레이션하려면 여러 스레드로 실행해야 합니다. increase() 메서드는 마지막에 예외를 던져서 강제로 롤백하도록 장치합니다. 이제 클라이언트를 작성해 실행해보겠습니다.
+
+다음은 서점 DB에 입력할 테스트 데이터입니다.
+
+|ISBN|BOOK_NAME|PRICE|
+|---|---|---|
+|0001|The First Book|30|
+
+|ISBN|STOCK|
+|---|---|
+|0001|10|
+
+### READ_UNCOMMITTED 및 READ_COMMITTED 격리 수준
+
+READ_UNCOMMITTED는 한 트랜잭션이 다른 트랜잭션이 아직 커밋하기 전에 변경한 내용을 읽을 수 있는 가장 하위의 격리 수준입니다.
+
+```java
+public class JdbcBookShop extends JdbcDaoSupport implements BookShop {
+    @Transactional(isolation.READ_UNCOMMITTED)
+    public int checkStock(String isbn) {}
+}
+
+public class Main {
+    public static void main(String[] args) {
+        // ...
+        final BookShop bookShop = context.getBean(BookShop.class);
+
+        Thread thread1 = new Thread(() -> {
+            try {
+                bookShop.increaseStock("0001", 5);
+            } catch (RuntimeException e) {}
+        }, "Thread 1");
+
+        Thread thread2 = new Thread(() -> {
+            bookShop.checkStock("0001");
+        }, "Thread 2");
+
+        thread1.start();
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {}
+        thread2.start();
+    }
+}
+```
+
+스레드 1은 도서 재고를 늘리고 스레드 2는 도서 재고를 체크합니다. 실행결과는 다음과 같습니다.
+
+```text
+Thread 1 Prepare to increase book stock
+Thread 1 Book stock increased by 5
+Thread 1 Sleeping
+Thread 2 Preare to check book stock
+Thread 2 Book stock is 15
+Thread 2 Sleeping
+Thread 1 Wake up
+Thread 1 Book stock rolled back
+Thread 2 Wake up
+```
+
+처음에 스레드 1이 재고를 늘리고 잠이드는데, 스레드 1의 트랜잭션이 아직 롤백되지 않은 상태에서 스레드 2가 재고를 읽습니다. 격리 수준이 READ_UNCOMMITTED 이므로 스레드 2는 스레드 1의 트랜잭션이 아직 변경 후 커밋하지 않은 재고를 읽게된것입니다.
+
+그러나 스레드 1이 깨어나고 롤백이 되면서 스레드 2가 읽은 값은 더이상 우효하지 않은 값이 됩니다. 이때 Dirty read 문제가 발생합니다. 이는 checkStock() 격리 수준을 READ_COMMITTED로 올리면 해결 됩니다.
+
+```java
+public class JdbcBookShop extends JdbcDaoSupport implements BookShop {
+    @Transactional(isolation.READ_COMMITTED)
+    public int checkStock(String isbn) {}
+}
+```
+
+```text
+Thread 1 Prepare to increase book stock
+Thread 1 Book stock increased by 5
+Thread 1 Sleeping
+Thread 2 Preare to check book stock
+Thread 1 Wake up
+Thread 1 Book stock rolled back
+Thread 2 Book stock is 10
+Thread 2 Sleeping
+Thread 2 Wake up
+```
+
+READ_COMMITTED 격리 수준을 지원하는 DB는 수정은 되었지만 아직 커밋하지 않은 로우에 수정 잠금을 걸어둔 상태입니다. 결국 다른 트랜잭션은 커밋/롤백되고 수정 잠금이 풀릴 때까지 기다렸다가 읽을 수밖에 없습니다.
+
+### REPEATABLE_READ 격리 수준
+
+스레드를 재구성해서 다른 동시성 문제를 살펴보자. 이번엔 스레드 1이 재고를 체크, 스레드 2가 도서 재고를 늘리는 일을 하도록 변경해보면
+
+```java
+public class Main {
+    public static void main(String[] args) {
+        // ...
+        final BookShop bookShop = context.getBean(BookShop.class);
+
+        Thread thread1 = new Thread(() -> {
+            bookShop.checkStock("0001");
+        }, "Thread 1");
+
+        Thread thread2 = new Thread(() -> {
+            try {
+                bookShop.increaseStock("0001", 5);
+            } catch (RuntimeException e) {}
+        }, "Thread 2");
+
+        thread1.start();
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {}
+        thread2.start();
+    }
+}
+```
+
+```text
+Thread 1 Prepare to check book stock
+Thread 1 Book stock is 10
+Thread 1 Sleeping
+Thread 2 Prepare to increase book stock
+Thread 2 Book stock increased by 5
+Thread 2 Sleeping
+Thread 1 Wake up
+Thread 2 Wake up
+Thread 2 Book stock rolled back
+```
+
+처음에 스레드 1이 도서 재고를 체크하고 잠이 드는데 아직 커밋되지 않은 상태입니다. 스레드 1이 잠자고 있는 동안 스레드 2가 시작되어 재고를 늘립니다. 격리 수준이 READ_COMMITTED이므로 스레드 2는 아직 커밋되지 않은 트랜잭션이 읽은 재고값을 수정할 수 있습니다. 만일 스레드 1이 깨어나 도서 재고를 다시 읽으면 그 값은 처음에 읽은 값이 아니게 됩니다. 이것이 Nonrepeatable read 문제 입니다.
+
+이는 checkout()의 격리 수준을 REPEATABLE_READ로 한 단계 올리면 해결됩니다.
+
+```java
+public class JdbcBookShop extends JdbcDaoSupport implements BookShop {
+    @Transactional(isolation.READ_COMMITTED)
+    public int checkStock(String isbn) {}
+}
+```
+
+```text
+Thread 1 Prepare to check book stock
+Thread 1 Book stock is 10
+Thread 1 Sleeping
+Thread 2 Prepare to increase book stock
+Thread 1 Wake up
+Thread 2 Book stock increased by 5
+Thread 2 Sleeping
+Thread 2 Wake up
+Thread 2 Book stock rolled back
+```
+
+REPEATABLE_READ 격리 수준을 지원하는 DB는 조회는 되었지만 아직 커밋하지 않은 로우에 읽기 잠금을 걸어둔 상태이므로 다른 트랜잭션은 이 트랜잭션이 커밋/롤백하여 읽기 잠슴이 풀릴 때까지 기다렸다ㅏㄱ 수정할 수밖에 없습니다.
+
+### SERIALIZABLE 격리 수준
+
+트랜잭션 1이 테이블에서 여러 로우를 읽은 후, 트랜잭션 2가 같은 테이블에 여러 로우를 새로 추가한다고 합시다. 트랜잭션 1이 같은 테이블을 다시 읽으면 자신이 처음 읽었을 때와 달리 새로 추가된 로우가 있음을 감지하겠죠, 이를 Phantom read 문제라고 합니다. 사실 이는 여러 로우와 연관된다는 점만 빼면 Nonrepeatable read 문제와 비슷합니다.
+
+이 문제를 해결하려면 SERIALIZABLE로 올려야 합니다. 이렇게 설정하면 전체 테이블에 읽기 잠금을 걸기 때문에 실행 속도가 가장 느립니다. 실무에서는 요건을 충족하는 가장 낮은 수준으로 격리 수준을 선택하는게 좋습니다.
