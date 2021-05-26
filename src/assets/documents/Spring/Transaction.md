@@ -690,3 +690,76 @@ REPEATABLE_READ 격리 수준을 지원하는 DB는 조회는 되었지만 아�
 트랜잭션 1이 테이블에서 여러 로우를 읽은 후, 트랜잭션 2가 같은 테이블에 여러 로우를 새로 추가한다고 합시다. 트랜잭션 1이 같은 테이블을 다시 읽으면 자신이 처음 읽었을 때와 달리 새로 추가된 로우가 있음을 감지하겠죠, 이를 Phantom read 문제라고 합니다. 사실 이는 여러 로우와 연관된다는 점만 빼면 Nonrepeatable read 문제와 비슷합니다.
 
 이 문제를 해결하려면 SERIALIZABLE로 올려야 합니다. 이렇게 설정하면 전체 테이블에 읽기 잠금을 걸기 때문에 실행 속도가 가장 느립니다. 실무에서는 요건을 충족하는 가장 낮은 수준으로 격리 수준을 선택하는게 좋습니다.
+
+## 10.8 트랜잭션 롤백 속성 설정하기
+
+> 과제
+
+기본적으로 (RuntimeException 및 Error형) 체크 예외가 아닌, 언체크 예외가 발생할 경우에만 트랜잭션이 롤백됩니다. 더러는 이런 규칙을 벗어나 직접 작성한 체크 예외가 나도 트랜잭션을 롤백시켜야 할 때가 있습니다.
+
+> 해결책
+
+트랜잭션 롤백에 영향을 주는 예외는 rollback 트랜잭션 속성에 정의합니다. 여기에 명시적으로 지정하지 않은 예외는 모두 기본 롤백 규칙(언체크 예외는 롤뱍, 체크 예외는 롤백 안 함)을 준수합니다.
+
+> 풀이
+
+트랜잭션 롤백 규칙은 @Transactional의 rollbackFor/noRollbackFor 속성에 지정합니다. 둘 다 Class[]형으로 선언된 속성이라서 각 속성마다 예외를 여러 개 지정할 수 있습니다.
+
+```java
+public class JdbcBookShop extends JdbcDaoSupport implements BookShop {
+    @Transactional(
+        propagation = Propagation.REQUIRES_NEW,
+        rollbackFor = IOException.class,
+        noRollbackFor = ArithmeticException.class)
+    public void purchase(String isbn, String username) throws Exception {
+        throw new ArithmeticException();
+    }
+}
+```
+
+## 10.9 트랜잭션 타임아웃, 읽기 전용 속성 설정하기
+
+> 과제
+
+스프링은 로우 및 테이블을 잠그기 때문에 실행 시간이 긴 트랜잭션은 리소스를 놔주지 않아 전체적으로 성능에 부정적인 영향을 미칩니다. 또 데이터를 읽기만 할 뿐 수정하지 않는 트랜잭션은 DB엔진이 최적화할 여지가 있으므로 이에 관한 속성을 설정ㄹ하면 애플리케이션의 전박적인 성능 향상을 기대할 수 있습니다.
+
+> 해결책
+
+timeout 트랜잭션 속성은 트랜잭션이 강제로 롤백되기 전까지 얼마나 오래 지속시킬지를 나타내는 시간으로, 이 속성을 설정해 장시간의 트랜잭션이 리소스를 오래 붙들고 있지 못하게 할 수 있습니다. read-only는 읽기 전용 트랜잭션을 표시하는 속성으로, 리소스가 트랜잭션을 최적화할 수 있게 귀띔응 해주는 것이지 리소스에 쓰기를 한다고 해서 실패 처리되는 건 아닙니다.
+
+> 풀이
+
+```java
+public class JdbcBookShop extends JdbcDaoSupport implements BookShop {
+    @Transactional(
+        propagation = Propagation.REPEATABLE_READ,
+        timeout = 30,
+        readOnly = true)
+    public int checkStock(String isbn) {}
+}
+```
+
+## 10.10 로드타임 위빙을 이용해 트랜잭션 관리하기
+
+> 과제
+
+스프링의 선언적 트랜잭션 관리는 기본적으로 AOP 프레임워크를 사용해 작동합니다. 스프링 AOP는 IoC 컨테이너에 선언된 빈의 public 메서드에만 어드바이스를 적용할 수 있으므로 이 스코프로 트랜잭션 관리가 국한되는 문제가 있습니다. 하지만 public 외의 메서드나 IoC 컨테이너 외부에서 만든 객체의 메서드도 트랜잭션을 관리해야 할 경우가 있습니다.
+
+> 해결책
+
+스프링은 AnnotationTransactionAspect라는 AspectJ 애스팩트를 제공합니다. 덕분에 public 메서드가 아니든, IoC 컨테이너 밖에서 생성된 객체의 메서드든 상관없이 어느 객체, 어느 메서드라도 트랜잭션을 관리할 수 있습니다. 이 애스팩트는 @Transactional 메서드라면 물불을 가리지 않고 트랜잭션을 관리해주며 AspectJ 위빙을 컴파일 타임에 할지, 로드 타임에 할지만 선택해서 애스팩트를 활성화하면 됩니다.
+
+> 풀이
+
+이 애스팩트를 로드 타임에 도메인 클래스 안으로 위빙하려면 구성 클래스에 @EnableLoadTimeWeaving을 붙입니다. 스프링 AnnotationTransactionAspect로 트랜잭션을 관리하려면 @EnableTransactionManagement를 추가로 붙이고 mode 속성을 ASPECTJ라고 지정합니다. (mode 속성은 ASPECTJ, PROXY 둘 중 하나를 지정). ASPECTJ는 컨테이너가 로드 타임 또는 컴파일 타임에 위빙하여 트랜잭션 어드바이스를 적용하도록 지시합니다. 이렇게 하려면 로드 타임 또는 컴파일 타임에 적절한 구성을 하고 스프링 JAR 파일을 클래스패스에 위치시켜야 합니다.
+
+한편 PROXY는 컨테이너가 스프링 AOP 메커니즘을 사용하게끔 지시합니다. ASPECTJ 모드에서는 인터페이스에 @Transactional을 붙여 구성하는 방법은 지원되지 않습니다. 트랜잭션 애스팩트는 자동으로 활성화되며 이 애스팩트가 사용할 트랜잭션 관리자를 지정해야 합니다. 기본적으로 이름이 transactionalManager인 트랜잭션 관리자 빈을 찾습니다.
+
+```java
+@Configuration
+@EnableTransactionManagement(mode = AdviceMode.ASPECTJ)
+@EnableLoadTimeWeaving
+public class BookstoreConfiguration {}
+```
+
+_스프링의 AspectJ 애스팩트 라이브러리를 사용하려면 spring-aspects 모듈을 클래스패스에 넣어야 합니다. 로드 타임 위빙을 활성화하려면 spring-instrument 모듈 안의 자바 에이전트를 포함시켜야합니다._
